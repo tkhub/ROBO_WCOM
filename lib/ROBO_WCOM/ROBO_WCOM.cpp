@@ -9,7 +9,11 @@ typedef struct  __attribute__((packed)) {
     uint32_t crc32;            // CRC32
 } rPacket_t;
 
-static rPacket_t receivedPacket;
+static rPacket_t receivedPacketBuffer[RECEIVE_BUFFER_SIZE];
+static volatile uint16_t receiveBufferHead = 0;
+static volatile uint16_t receiveBufferTail = 0;
+static volatile int16_t receivedCount = 0;
+
 static rPacket_t sendPacket;
 static uint8_t ownAddress[6];
 static uint8_t peerAddress[6];
@@ -24,12 +28,16 @@ static uint32_t ROBO_WCOM_calcCRC32(const rPacketData_t &data);
 
 int ROBO_WCOM_Init(uint8_t sourceAddress[6], uint8_t distAddress[6], uint32_t timeoutMS)
 {
+    rPacket_t zDummy;
+    int i;
+
     timeoutMillis = timeoutMS;
-    receivedPacket.datas.timestamp = 0;
-    receivedPacket.datas.carriedSize = 0;
-    memset(receivedPacket.datas.address, 0, 6);
-    memset(receivedPacket.datas.carriedData, 0, CARRIED_DATA_MAX_SIZE);
-    receivedPacket.crc32 = 0;
+    lastReceivedMillis = 0;
+
+    receiveBufferHead = 0;
+    receiveBufferTail = 0;
+    receivedCount = 0;
+
     WiFi.mode(WIFI_STA);
     if (esp_now_init() != ESP_OK)
     {
@@ -54,6 +62,10 @@ int ROBO_WCOM_SendPacket(uint32_t timestamp, const uint8_t* data, uint8_t size)
 {
     sendPacket.datas.timestamp = timestamp;
     memcpy(sendPacket.datas.address, ownAddress, 6);
+    if (size > CARRIED_DATA_MAX_SIZE)
+    {
+        size = CARRIED_DATA_MAX_SIZE;
+    }
     sendPacket.datas.carriedSize = size;
     memcpy(sendPacket.datas.carriedData, data, size);
     sendPacket.crc32 = ROBO_WCOM_calcCRC32(sendPacket.datas);
@@ -74,25 +86,35 @@ int ROBO_WCOM_SendPacket(uint32_t timestamp, const uint8_t* data, uint8_t size)
 
 int ROBO_WCOM_ReceivePacket(uint32_t nowMills, int32_t* timestamp, uint8_t *address, uint8_t* data, uint8_t* size)
 {
-    uint32_t calcCRC =  ROBO_WCOM_calcCRC32(receivedPacket.datas);
-    *timestamp = receivedPacket.datas.timestamp;
-    memcpy(address, receivedPacket.datas.address, 6);
-    *size = receivedPacket.datas.carriedSize;
-    memcpy(data, receivedPacket.datas.carriedData, *size);
-    // Serial.printf(" calcCRC=0x%08X, rcvCRC=0x%08X", calcCRC, receivedPacket.crc32);
+    uint32_t calcCRC = 0xFFFFFFFF;
+    uint32_t readCRC = 0xFFFFFFFF;
     if (nowMills - lastReceivedMillis > timeoutMillis)
     {
         // タイムアウト
         return -1;
     }
-    else if (receivedPacket.crc32 != calcCRC)
-    {
-        return -2;
-    }
     else
     {
-        // CRCチェックOK タイムアウト無し
-        return 0;
+        calcCRC =  ROBO_WCOM_calcCRC32(receivedPacketBuffer[receiveBufferTail].datas);
+        *timestamp = receivedPacketBuffer[receiveBufferTail].datas.timestamp;
+        memcpy(address, receivedPacketBuffer[receiveBufferTail].datas.address, 6);
+        *size = receivedPacketBuffer[receiveBufferTail].datas.carriedSize;
+        memcpy(data, receivedPacketBuffer[receiveBufferTail].datas.carriedData, *size);
+        readCRC = receivedPacketBuffer[receiveBufferTail].crc32;
+
+        receivedCount--;
+        receiveBufferTail = (receiveBufferTail + 1) % RECEIVE_BUFFER_SIZE;
+
+        if (readCRC != calcCRC)
+        {
+            return -2;
+        }
+        else
+        {
+            // CRCチェックOK タイムアウト無し
+            return 0;
+        }
+
     }
 }
 
@@ -113,15 +135,26 @@ static uint32_t ROBO_WCOM_calcCRC32(const rPacketData_t &data)
     return crc ^ 0xFFFFFFFF;
 }
 
-bool ROBO_WCOM_isAvailableReceivePacket(void)
+int16_t ROBO_WCOM_ReceivedCapacity(void)
 {
-    return true;
+    return receivedCount;
 }
 
 void onDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
 {
-    lastReceivedMillis = millis();
-    memcpy(&receivedPacket, incomingData, sizeof(rPacket_t));
+    if (len != sizeof(rPacket_t))
+    {
+        // サイズエラー
+        return;
+    }
+    else
+    {
+        lastReceivedMillis = millis();
+        memcpy(&receivedPacketBuffer[receiveBufferHead], incomingData, sizeof(rPacket_t));
+        receivedCount++;
+        receiveBufferHead = (receiveBufferHead + 1) % RECEIVE_BUFFER_SIZE;
+        return ;
+    }
 }
 
 void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
