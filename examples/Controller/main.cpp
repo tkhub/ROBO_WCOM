@@ -48,11 +48,13 @@ void setup()
     Serial.println("Board Boot");
 
 #if BOARD_IS == BOARD_A
-    Serial.println("Controller communication started.");
-    Serial.println(ROBO_WCOM::Init(MACADDRESS_BOARD_A, MACADDRESS_BOARD_B, 1000));
+    auto initStatus = ROBO_WCOM::Init(MACADDRESS_BOARD_A, MACADDRESS_BOARD_B, 1000);
+    Serial.print("Controller communication started. : Status=");
+    Serial.println(ROBO_WCOM::ToString(initStatus));
 #else
-    Serial.println("Robo communication started.");
-    Serial.println(ROBO_WCOM::Init(MACADDRESS_BOARD_B, MACADDRESS_BOARD_A, 1000));
+    auto initStatus = ROBO_WCOM::Init(MACADDRESS_BOARD_B, MACADDRESS_BOARD_A, 1000);
+    Serial.println("Robo communication started. : Status=");
+    Serial.println(ROBO_WCOM::ToString(initStatus));
 #endif
 }
 
@@ -81,18 +83,10 @@ void loop()
 #else
     // 受信側：バッファにデータがあれば受信処理
     cap = ROBO_WCOM::ReceivedCapacity();
-    if (cap > 0)
-    {
-        Serial.print("Capacity=");
-        Serial.print(cap);
-        testReceive(nowMillis);
-        Serial.println();
-    }
-    else
-    {
-        Serial.print("Capacity=");
-        Serial.println(cap);
-    }
+    Serial.print("Capacity=");
+    Serial.print(cap);
+    testReceive(nowMillis);
+    Serial.println();
     delay(10);
 #endif
 }
@@ -116,23 +110,26 @@ void testReceive(uint32_t nowMillis)
 {
     char receivedString[128];
     uint8_t size;
-    int32_t timestamp;
+    uint32_t timestamp;
     uint8_t address[6];
     uint8_t data[ROBO_WCOM::CARRIED_DATA_MAX_SIZE];
 
     // パケット受信
-    int rcv_status = ROBO_WCOM::ReceivePacket(nowMillis, &timestamp, address, data, &size);
+    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
 
     // ステータス表示
     switch (rcv_status)
     {
-    case 0:
+    case ROBO_WCOM::Status::Ok:
         Serial.print("\t || RECEIVE OK    ");
         break;
-    case -1:
+    case ROBO_WCOM::Status::Timeout:
         Serial.print("\t || TIMEOUT ERROR ");
         break;
-    case -2:
+    case ROBO_WCOM::Status::BufferEmpty:
+        Serial.print("\t || BUFFER EMPTY  ");
+        break;
+    case ROBO_WCOM::Status::CrcError:
         Serial.print("\t || CRC ERROR     ");
         break;
     default:
@@ -147,6 +144,7 @@ void testReceive(uint32_t nowMillis)
              address[0], address[1], address[2],
              address[3], address[4], address[5],
              data, size);
+    
 
     Serial.print(receivedString);
 }

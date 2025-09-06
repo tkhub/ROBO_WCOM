@@ -5,6 +5,7 @@
 
 namespace ROBO_WCOM
 {
+
     /**
      * @brief 送受信パケット構造（CRC付き）
      */
@@ -32,6 +33,7 @@ namespace ROBO_WCOM
     static bool popFromBuffer(Packet& pkt);
     static void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len);
     static void onDataSent(const uint8_t*, esp_now_send_status_t);
+    static Status extractPacketData(const Packet& pkt, uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size);
 
     //=== 内部関数実装 ===//
 
@@ -104,9 +106,41 @@ namespace ROBO_WCOM
      */
     static void onDataSent(const uint8_t*, esp_now_send_status_t) {}
 
+
+    /**
+     * @brief パケットからデータを抽出（CRCチェック付き）
+     * @param pkt     対象パケット
+     * @param timestamp タイムスタンプ格納先
+     * @param address   アドレス格納先（6バイト）
+     * @param data      データ本体格納先
+     * @param size      データサイズ格納先
+     * @return Status::Ok / Status::CrcError / Status::InvalidArg
+     */
+    static Status extractPacketData(const Packet& pkt, uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size)
+    {
+
+        if (calcCRC32(pkt.data) != pkt.crc32)
+        {
+            return Status::CrcError;
+        }
+
+        *timestamp = pkt.data.timestamp;
+        memcpy(address, pkt.data.address, sizeof(pkt.data.address));
+        *size = pkt.data.carriedSize;
+        memcpy(data, pkt.data.carriedData, *size);
+        return Status::Ok;
+    }
+    
     //=== 公開API実装 ===//
 
-    int Init(const uint8_t sourceAddress[6], const uint8_t distAddress[6], uint32_t timeoutMS)
+    /**
+     * @brief 通信初期化
+     * @param sourceAddress 自デバイスのMACアドレス（6バイト）
+     * @param distAddress   通信相手のMACアドレス（6バイト）
+     * @param timeoutMS     受信タイムアウト時間（ミリ秒）
+     * @return ステータスコード (Status)
+     */
+    Status Init(const uint8_t sourceAddress[6], const uint8_t distAddress[6], uint32_t timeoutMS)
     {
         timeoutMillis = timeoutMS;
         lastRecvMillis = 0;
@@ -116,67 +150,106 @@ namespace ROBO_WCOM
         memcpy(peerAddr, distAddress, sizeof(peerAddr));
 
         WiFi.mode(WIFI_STA);
-        if (esp_now_init() != ESP_OK) return -1;
+        if (esp_now_init() != ESP_OK)
+        {
+            return Status::EspNowInitFail;
+        }
 
         memset(&peerInfo, 0, sizeof(peerInfo));
         memcpy(peerInfo.peer_addr, distAddress, sizeof(peerAddr));
         peerInfo.channel = 0;
         peerInfo.encrypt = false;
 
-        if (esp_now_add_peer(&peerInfo) != ESP_OK) return -2;
+        if (esp_now_add_peer(&peerInfo) != ESP_OK)
+        {
+            return Status::AddPeerFail;
+        }
 
         esp_now_register_recv_cb(onDataRecv);
         esp_now_register_send_cb(onDataSent);
-        return 0;
+        return Status::Ok;
     }
 
     /**
-     * @brief 送信処理
-     * @param   timestamp   送信時刻（任意の基準でOK）
-     * @param   data        送信データへのポインタ
-     * @param   size        送信データサイズ（最大 CARRIED_DATA_MAX_SIZE）
-     * @return              0:成功 / -1:送信失敗
+     * @brief パケット送信
+     * @param timestamp 送信時刻（任意の基準でOK）
+     * @param data      送信データへのポインタ
+     * @param size      送信データサイズ（最大 CARRIED_DATA_MAX_SIZE）
+     * @return ステータスコード (Status)
      */
-    int SendPacket(uint32_t timestamp, const uint8_t* data, uint8_t size)
+    Status SendPacket(uint32_t timestamp, const uint8_t* data, uint8_t size)
     {
         sendPacket.data.timestamp = timestamp;
         memcpy(sendPacket.data.address, ownAddr, sizeof(ownAddr));
 
-        if (size > CARRIED_DATA_MAX_SIZE) size = CARRIED_DATA_MAX_SIZE;
+        if (size > CARRIED_DATA_MAX_SIZE)
+        {
+            size = CARRIED_DATA_MAX_SIZE;
+        }
         sendPacket.data.carriedSize = size;
         memcpy(sendPacket.data.carriedData, data, size);
 
         sendPacket.crc32 = calcCRC32(sendPacket.data);
 
-        return (esp_now_send(peerAddr, reinterpret_cast<uint8_t*>(&sendPacket), sizeof(Packet)) == ESP_OK) ? 0 : -1;
+        if (esp_now_send(peerAddr, reinterpret_cast<uint8_t*>(&sendPacket), sizeof(Packet)) == ESP_OK)
+        {
+            return Status::Ok;
+        }
+        else
+        {
+            return Status::SendFail;
+        }
     }
 
     /**
-     * @brief 受信処理。バッファから1パケット取り出す。
-     *
-     * @param nowMillis 現在時刻(ms)
+     * @brief パケット受信
+     * @param nowMillis 現在時刻（millis）
      * @param timestamp 受信パケットのタイムスタンプ格納先
-     * @param address 送信元アドレス格納先（6バイト）
-     * @param data 受信データ格納先
-     * @param size 受信データサイズ格納先
-     * @return * int           0:成功 / -1:タイムアウト / -2:CRCエラー / -3:バッファ空
+     * @param address   送信元アドレス格納先（6バイト）
+     * @param data      受信データ格納先
+     * @param size      受信データサイズ格納先
+     * @return ステータスコード (Status)
      */
-    int ReceivePacket(uint32_t nowMillis, int32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size)
+    Status PopOldestPacket(uint32_t nowMillis, uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size)
     {
-        if (nowMillis - lastRecvMillis > timeoutMillis) return -1;
-
         Packet pkt;
-        if (!popFromBuffer(pkt)) return -3; // バッファ空
+        Status pktStatus;
+        if (nowMillis - lastRecvMillis > timeoutMillis)
+        {
+            return Status::Timeout;
+        }
 
-        if (calcCRC32(pkt.data) != pkt.crc32) return -2;
-
-        *timestamp = pkt.data.timestamp;
-        memcpy(address, pkt.data.address, sizeof(pkt.data.address));
-        *size = pkt.data.carriedSize;
-        memcpy(data, pkt.data.carriedData, *size);
-
-        return 0;
+        if (!popFromBuffer(pkt))
+        {
+            return Status::BufferEmpty;
+        }
+        pktStatus = extractPacketData(pkt, timestamp, address, data, size);
+        return pktStatus;
     }
+
+    /**
+     * @brief バッファの最新データをチェックする。バッファは操作しない。
+     * 
+     * @param nowMillis 現在時刻（millis）
+     * @param timestamp 受信パケットのタイムスタンプ格納先
+     * @param address   送信元アドレス格納先（6バイト）
+     * @param data      受信データ格納先
+     * @param size      受信データサイズ格納先
+     * @return ステータスコード (Status)
+     */
+    Status PeekLatestPacket(uint32_t nowMillis, uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size)
+    {
+        Packet pkt;
+        Status pktStatus;
+        if (nowMillis - lastRecvMillis > timeoutMillis)
+        {
+            return Status::Timeout;
+        }
+        pkt = recvBuffer[tail];
+        pktStatus = extractPacketData(pkt, timestamp, address, data, size);
+        return pktStatus;
+    }
+
 
     /**
      * @brief 受信バッファ内のパケット数を取得
@@ -187,6 +260,37 @@ namespace ROBO_WCOM
     {
         return count;
     }
+
+    /**
+     * @brief バッファのクリア
+     * 
+     * @return Status 
+     */
+    Status FlushBuffer(void)
+    {
+        head = 0;
+        tail = 0;
+        count = 0;
+        return Status::Ok;
+    }
+
+    /**
+     * @brief ステータスコードを文字列に変換
+     * @param s ステータスコード
+     * @return 文字列
+     */
+    const char* ToString(Status s)
+    {
+        switch (s) {
+            case Status::Ok:              return "Ok";
+            case Status::Timeout:         return "Timeout";
+            case Status::CrcError:        return "CRC error";
+            case Status::BufferEmpty:     return "Buffer empty";
+            case Status::InvalidArg:      return "Invalid argument";
+            case Status::EspNowInitFail:  return "ESP-NOW init failed";
+            case Status::AddPeerFail:     return "Add peer failed";
+            case Status::SendFail:        return "Send failed";
+            default:                      return "Unknown";
+        }
+    }
 }
-
-
