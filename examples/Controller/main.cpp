@@ -107,8 +107,8 @@ void testReceive(uint32_t nowMillis)
     uint8_t data[ROBO_WCOM::CARRIED_DATA_MAX_SIZE];
 
     // パケット受信
-//    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
-    auto rcv_status = ROBO_WCOM::PeekLatestPacket(nowMillis, &timestamp, address, data, &size);
+    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
+//    auto rcv_status = ROBO_WCOM::PeekLatestPacket(nowMillis, &timestamp, address, data, &size);
 
     // ステータス表示
     switch (rcv_status)

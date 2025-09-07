@@ -136,6 +136,21 @@ namespace ROBO_WCOM
         return Status::Ok;
     }
 
+    /**
+     * @brief 空パケットを作成
+     * 
+     * @return Packet 空のパケット
+     */
+    static Packet makeEmptyPacket()
+    {
+        Packet zeroPkt;
+        zeroPkt.data.timestamp = 0;
+        memset(zeroPkt.data.address, 0, sizeof(zeroPkt.data.address));
+        zeroPkt.data.carriedSize = 0;
+        memset(zeroPkt.data.carriedData, 0, sizeof(zeroPkt.data.carriedData));
+        zeroPkt.crc32 = calcCRC32(zeroPkt.data);
+        return zeroPkt;
+    }
 
     //=== 公開API実装 ===//
 
@@ -150,19 +165,12 @@ namespace ROBO_WCOM
     Status Init(const uint8_t sourceAddress[6], const uint8_t distAddress[6], uint32_t nowMillis, uint32_t timeoutMS)
     {
         uint8_t i;
-        Packet zeroPkt;
+        Packet zeroPkt = makeEmptyPacket();     // 中身が空でCRCが成立しているデータを作成
         timeoutMillis = timeoutMS;
         lastRecvMillis = nowMillis;
         head = 0;
         tail = 0;
         count = 0;
-
-        zeroPkt.data.timestamp = 0;
-        memset(zeroPkt.data.address, 0, sizeof(zeroPkt.data.address));
-        zeroPkt.data.carriedSize = 0;
-        memset(zeroPkt.data.carriedData, 0, sizeof(zeroPkt.data.carriedData));
-        zeroPkt.crc32 = calcCRC32(zeroPkt.data);
-        // バッファ初期化
 
         for (i = 0; i < RECEIVE_BUFFER_SIZE; i++)
         {
@@ -240,24 +248,14 @@ namespace ROBO_WCOM
         Status pktStatus;
         if (nowMillis - lastRecvMillis > timeoutMillis)
         {
-            Packet zeroPkt;
-            zeroPkt.data.timestamp = 0;
-            memset(zeroPkt.data.address, 0, sizeof(zeroPkt.data.address));
-            zeroPkt.data.carriedSize = 0;
-            memset(zeroPkt.data.carriedData, 0, sizeof(zeroPkt.data.carriedData));
-            zeroPkt.crc32 = calcCRC32(zeroPkt.data);
+            Packet zeroPkt = makeEmptyPacket();     // 中身が空でCRCが成立しているデータを作成
             extractPacketData(zeroPkt, timestamp, address, data, size);
             return Status::Timeout;
         }
 
         if (!popFromBuffer(pkt))
         {
-            Packet zeroPkt;
-            zeroPkt.data.timestamp = 0;
-            memset(zeroPkt.data.address, 0, sizeof(zeroPkt.data.address));
-            zeroPkt.data.carriedSize = 0;
-            memset(zeroPkt.data.carriedData, 0, sizeof(zeroPkt.data.carriedData));
-            zeroPkt.crc32 = calcCRC32(zeroPkt.data);
+            Packet zeroPkt = makeEmptyPacket();     // 中身が空でCRCが成立しているデータを作成
             extractPacketData(zeroPkt, timestamp, address, data, size);
             return Status::BufferEmpty;
         }
@@ -281,12 +279,7 @@ namespace ROBO_WCOM
         Status pktStatus;
         if (nowMillis - lastRecvMillis > timeoutMillis)
         {
-            Packet zeroPkt;
-            zeroPkt.data.timestamp = 0;
-            memset(zeroPkt.data.address, 0, sizeof(zeroPkt.data.address));
-            zeroPkt.data.carriedSize = 0;
-            memset(zeroPkt.data.carriedData, 0, sizeof(zeroPkt.data.carriedData));
-            zeroPkt.crc32 = calcCRC32(zeroPkt.data);
+            Packet zeroPkt = makeEmptyPacket();     // 中身が空でCRCが成立しているデータを作成
             extractPacketData(zeroPkt, timestamp, address, data, size);
             return Status::Timeout;
         }
