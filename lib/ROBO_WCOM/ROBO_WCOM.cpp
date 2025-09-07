@@ -104,7 +104,12 @@ namespace ROBO_WCOM
      * @param mac_addr 送信先MAC
      * @param status   送信ステータス
      */
-    static void onDataSent(const uint8_t*, esp_now_send_status_t) {}
+    static void onDataSent(const uint8_t*, esp_now_send_status_t) 
+    {
+        // 送信完了時の処理（必要なら実装）
+        // 今回は特に何もしない
+        return;
+    }
 
 
     /**
@@ -130,21 +135,40 @@ namespace ROBO_WCOM
         memcpy(data, pkt.data.carriedData, *size);
         return Status::Ok;
     }
-    
+
+
     //=== 公開API実装 ===//
 
     /**
      * @brief 通信初期化
      * @param sourceAddress 自デバイスのMACアドレス（6バイト）
      * @param distAddress   通信相手のMACアドレス（6バイト）
+     * @param nowMillis     受信タイムアウト時間（ミリ秒）
      * @param timeoutMS     受信タイムアウト時間（ミリ秒）
      * @return ステータスコード (Status)
      */
-    Status Init(const uint8_t sourceAddress[6], const uint8_t distAddress[6], uint32_t timeoutMS)
+    Status Init(const uint8_t sourceAddress[6], const uint8_t distAddress[6], uint32_t nowMillis, uint32_t timeoutMS)
     {
+        uint8_t i;
+        Packet zeroPkt;
         timeoutMillis = timeoutMS;
-        lastRecvMillis = 0;
-        head = tail = count = 0;
+        lastRecvMillis = nowMillis;
+        head = 0;
+        tail = 0;
+        count = 0;
+
+        zeroPkt.data.timestamp = 0;
+        memset(zeroPkt.data.address, 0, sizeof(zeroPkt.data.address));
+        zeroPkt.data.carriedSize = 0;
+        memset(zeroPkt.data.carriedData, 0, sizeof(zeroPkt.data.carriedData));
+        zeroPkt.crc32 = calcCRC32(zeroPkt.data);
+        // バッファ初期化
+
+        for (i = 0; i < RECEIVE_BUFFER_SIZE; i++)
+        {
+            pushToBuffer(zeroPkt);
+        }
+        FlushBuffer();
 
         memcpy(ownAddr, sourceAddress, sizeof(ownAddr));
         memcpy(peerAddr, distAddress, sizeof(peerAddr));
@@ -216,11 +240,25 @@ namespace ROBO_WCOM
         Status pktStatus;
         if (nowMillis - lastRecvMillis > timeoutMillis)
         {
+            Packet zeroPkt;
+            zeroPkt.data.timestamp = 0;
+            memset(zeroPkt.data.address, 0, sizeof(zeroPkt.data.address));
+            zeroPkt.data.carriedSize = 0;
+            memset(zeroPkt.data.carriedData, 0, sizeof(zeroPkt.data.carriedData));
+            zeroPkt.crc32 = calcCRC32(zeroPkt.data);
+            extractPacketData(zeroPkt, timestamp, address, data, size);
             return Status::Timeout;
         }
 
         if (!popFromBuffer(pkt))
         {
+            Packet zeroPkt;
+            zeroPkt.data.timestamp = 0;
+            memset(zeroPkt.data.address, 0, sizeof(zeroPkt.data.address));
+            zeroPkt.data.carriedSize = 0;
+            memset(zeroPkt.data.carriedData, 0, sizeof(zeroPkt.data.carriedData));
+            zeroPkt.crc32 = calcCRC32(zeroPkt.data);
+            extractPacketData(zeroPkt, timestamp, address, data, size);
             return Status::BufferEmpty;
         }
         pktStatus = extractPacketData(pkt, timestamp, address, data, size);
@@ -243,6 +281,13 @@ namespace ROBO_WCOM
         Status pktStatus;
         if (nowMillis - lastRecvMillis > timeoutMillis)
         {
+            Packet zeroPkt;
+            zeroPkt.data.timestamp = 0;
+            memset(zeroPkt.data.address, 0, sizeof(zeroPkt.data.address));
+            zeroPkt.data.carriedSize = 0;
+            memset(zeroPkt.data.carriedData, 0, sizeof(zeroPkt.data.carriedData));
+            zeroPkt.crc32 = calcCRC32(zeroPkt.data);
+            extractPacketData(zeroPkt, timestamp, address, data, size);
             return Status::Timeout;
         }
         pkt = recvBuffer[tail];

@@ -37,32 +37,22 @@ void testReceive(uint32_t nowMillis);
 //---------------------------------------------
 // Arduino標準関数
 //---------------------------------------------
-/**
- * @brief 初期化処理
- * - シリアル通信開始
- * - ROBO_WCOM通信初期化
- */
 void setup()
 {
     Serial.begin(115200);
     Serial.println("Board Boot");
 
 #if BOARD_IS == BOARD_A
-    auto initStatus = ROBO_WCOM::Init(MACADDRESS_BOARD_A, MACADDRESS_BOARD_B, 1000);
+    auto initStatus = ROBO_WCOM::Init(MACADDRESS_BOARD_A, MACADDRESS_BOARD_B, millis(), 1000);
     Serial.print("Controller communication started. : Status=");
     Serial.println(ROBO_WCOM::ToString(initStatus));
 #else
-    auto initStatus = ROBO_WCOM::Init(MACADDRESS_BOARD_B, MACADDRESS_BOARD_A, 1000);
+    auto initStatus = ROBO_WCOM::Init(MACADDRESS_BOARD_B, MACADDRESS_BOARD_A, millis(), 1000);
     Serial.println("Robo communication started. : Status=");
     Serial.println(ROBO_WCOM::ToString(initStatus));
 #endif
 }
 
-/**
- * @brief メインループ
- * - BOARD_A: 定期的にデータ送信
- * - BOARD_B: 受信バッファにデータがあれば受信処理
- */
 void loop()
 {
     uint32_t nowMillis = millis();
@@ -83,7 +73,9 @@ void loop()
 #else
     // 受信側：バッファにデータがあれば受信処理
     cap = ROBO_WCOM::ReceivedCapacity();
-    Serial.print("Capacity=");
+    Serial.print("t=");
+    Serial.print(nowMillis);
+    Serial.print(" Capacity=");
     Serial.print(cap);
     testReceive(nowMillis);
     Serial.println();
@@ -115,7 +107,8 @@ void testReceive(uint32_t nowMillis)
     uint8_t data[ROBO_WCOM::CARRIED_DATA_MAX_SIZE];
 
     // パケット受信
-    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
+//    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
+    auto rcv_status = ROBO_WCOM::PeekLatestPacket(nowMillis, &timestamp, address, data, &size);
 
     // ステータス表示
     switch (rcv_status)

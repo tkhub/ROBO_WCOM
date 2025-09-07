@@ -57,10 +57,11 @@ namespace ROBO_WCOM
      * @brief 通信初期化
      * @param sourceAddress 自デバイスのMACアドレス（6バイト）
      * @param distAddress   通信相手のMACアドレス（6バイト）
+     * @param nowMillis     受信タイムアウト時間（ミリ秒）
      * @param timeoutMS     受信タイムアウト時間（ミリ秒）
      * @return ステータスコード (Status)
      */
-    Status Init(const uint8_t sourceAddress[6], const uint8_t distAddress[6], uint32_t timeoutMS);
+    Status Init(const uint8_t sourceAddress[6], const uint8_t distAddress[6], uint32_t nowMillis, uint32_t timeoutMS);
 
     /**
      * @brief パケット送信
