@@ -34,6 +34,7 @@ namespace ROBO_WCOM
     static void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len);
     static void onDataSent(const uint8_t*, esp_now_send_status_t);
     static Status extractPacketData(const Packet& pkt, uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size);
+    static void fillWithEmptyPacket(uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size);
 
     //=== 内部関数実装 ===//
 
@@ -46,10 +47,13 @@ namespace ROBO_WCOM
     {
         uint32_t crc = 0xFFFFFFFF;
         const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&data);
-        for (size_t i = 0; i < sizeof(PacketData); ++i) {
+        for (size_t i = 0; i < sizeof(PacketData); ++i)
+        {
             crc ^= bytes[i];
             for (int j = 0; j < 8; ++j)
+            {
                 crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+            }
         }
         return crc ^ 0xFFFFFFFF;
     }
@@ -62,14 +66,60 @@ namespace ROBO_WCOM
     {
         recvBuffer[head] = pkt;
         head = (head + 1) % RECEIVE_BUFFER_SIZE;
-        if (count < RECEIVE_BUFFER_SIZE) {
-            ++count;
-        } else {
+        if (count < RECEIVE_BUFFER_SIZE)
+        {
+            count++;
+        }
+        else
+        {
             // 上書き時はtailも進める
             tail = (tail + 1) % RECEIVE_BUFFER_SIZE;
         }
     }
 
+    /**
+     * @brief 受信処理を切り替えるための定数
+     * 
+     */
+    enum class BufferMode { Pop, Peek };
+
+    /**
+     * @brief パケットを受信する処理。バッファ操作を行う場合と行わない場合での切り替えが可能
+     * 
+     * @param mode 受信状態切り替え
+     * @param nowMillis 現在時刻（millis）
+     * @param timestamp 受信パケットのタイムスタンプ格納先
+     * @param address   送信元アドレス格納先（6バイト）
+     * @param data      受信データ格納先
+     * @param size      受信データサイズ格納先
+     * @return ステータスコード (Status)
+     */
+    static Status getPacket(BufferMode mode, uint32_t nowMillis,
+                            uint32_t* timestamp, uint8_t* address,
+                            uint8_t* data, uint8_t* size)
+    {
+        Packet pkt;
+        if (nowMillis - lastRecvMillis > timeoutMillis)
+        {
+            return Status::Timeout;
+        }
+
+        if (mode == BufferMode::Pop)
+        {
+            // POP処理ではデータを取り出すとともにバッファ操作を行う
+            if (!popFromBuffer(pkt))
+            {
+                // バッファが空の場合、ゼロ埋めしたうえで、空であることを通知する
+                fillWithEmptyPacket(timestamp, address, data, size);
+                return Status::BufferEmpty;
+            }
+        }
+        else
+        {
+            pkt = recvBuffer[tail];
+        }
+        return extractPacketData(pkt, timestamp, address, data, size);
+    }
     /**
      * @brief 受信バッファからパケットを取り出す
      * @param pkt 取り出したパケット格納先
@@ -77,7 +127,10 @@ namespace ROBO_WCOM
      */
     static bool popFromBuffer(Packet& pkt)
     {
-        if (count <= 0) return false;
+        if (count <= 0)
+        {
+            return false;
+        }
         pkt = recvBuffer[tail];
         tail = (tail + 1) % RECEIVE_BUFFER_SIZE;
         --count;
@@ -92,7 +145,10 @@ namespace ROBO_WCOM
      */
     static void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len)
     {
-        if (len != sizeof(Packet)) return;
+        if (len != sizeof(Packet))
+        {
+            return;
+        }
         lastRecvMillis = millis();
         Packet pkt;
         memcpy(&pkt, incomingData, sizeof(Packet));
@@ -104,7 +160,7 @@ namespace ROBO_WCOM
      * @param mac_addr 送信先MAC
      * @param status   送信ステータス
      */
-    static void onDataSent(const uint8_t*, esp_now_send_status_t) 
+    static void onDataSent(const uint8_t*, esp_now_send_status_t)
     {
         // 送信完了時の処理（必要なら実装）
         // 今回は特に何もしない
@@ -124,6 +180,10 @@ namespace ROBO_WCOM
     static Status extractPacketData(const Packet& pkt, uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size)
     {
 
+        if(!timestamp || !address || !data || !size)
+        {
+            return Status::InvalidArg;
+        }
         if (calcCRC32(pkt.data) != pkt.crc32)
         {
             return Status::CrcError;
@@ -152,7 +212,20 @@ namespace ROBO_WCOM
         return zeroPkt;
     }
 
-    //=== 公開API実装 ===//
+    /**
+     * @brief 空のパケットを生成し、データをゼロにして返す
+     * 
+     * @param timestamp ゼロを格納
+     * @param address   ゼロを格納
+     * @param data      ゼロを格納
+     * @param size      ゼロを格納
+     */
+    static void fillWithEmptyPacket(uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size)
+    {
+        Packet zeroPkt = makeEmptyPacket();
+        extractPacketData(zeroPkt, timestamp, address, data, size);
+    }
+    //======= 公開API実装 =======//
 
     /**
      * @brief 通信初期化
@@ -172,31 +245,37 @@ namespace ROBO_WCOM
         tail = 0;
         count = 0;
 
+        // バッファをゼロ埋めして初期化する
         for (i = 0; i < RECEIVE_BUFFER_SIZE; i++)
         {
             pushToBuffer(zeroPkt);
         }
         FlushBuffer();
 
+        // アドレスをコピー
         memcpy(ownAddr, sourceAddress, sizeof(ownAddr));
         memcpy(peerAddr, distAddress, sizeof(peerAddr));
 
+        // WiFiをステーションモードで初期化
         WiFi.mode(WIFI_STA);
+ 
+        // ESP-NOWを初期化
         if (esp_now_init() != ESP_OK)
         {
             return Status::EspNowInitFail;
         }
-
         memset(&peerInfo, 0, sizeof(peerInfo));
         memcpy(peerInfo.peer_addr, distAddress, sizeof(peerAddr));
         peerInfo.channel = 0;
         peerInfo.encrypt = false;
 
+        // ペアリング
         if (esp_now_add_peer(&peerInfo) != ESP_OK)
         {
             return Status::AddPeerFail;
         }
 
+        // コールバック関数を設定
         esp_now_register_recv_cb(onDataRecv);
         esp_now_register_send_cb(onDataSent);
         return Status::Ok;
@@ -211,18 +290,22 @@ namespace ROBO_WCOM
      */
     Status SendPacket(uint32_t timestamp, const uint8_t* data, uint8_t size)
     {
+
         sendPacket.data.timestamp = timestamp;
         memcpy(sendPacket.data.address, ownAddr, sizeof(ownAddr));
 
+        // 送信データが大きすぎたらリミット
         if (size > CARRIED_DATA_MAX_SIZE)
         {
             size = CARRIED_DATA_MAX_SIZE;
         }
+
+        // 送信データを格納
         sendPacket.data.carriedSize = size;
         memcpy(sendPacket.data.carriedData, data, size);
-
         sendPacket.crc32 = calcCRC32(sendPacket.data);
 
+        // 送信処理
         if (esp_now_send(peerAddr, reinterpret_cast<uint8_t*>(&sendPacket), sizeof(Packet)) == ESP_OK)
         {
             return Status::Ok;
@@ -234,7 +317,7 @@ namespace ROBO_WCOM
     }
 
     /**
-     * @brief パケット受信
+     * @brief パケット受信。バッファからデータを取り出す
      * @param nowMillis 現在時刻（millis）
      * @param timestamp 受信パケットのタイムスタンプ格納先
      * @param address   送信元アドレス格納先（6バイト）
@@ -244,23 +327,7 @@ namespace ROBO_WCOM
      */
     Status PopOldestPacket(uint32_t nowMillis, uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size)
     {
-        Packet pkt;
-        Status pktStatus;
-        if (nowMillis - lastRecvMillis > timeoutMillis)
-        {
-            Packet zeroPkt = makeEmptyPacket();     // 中身が空でCRCが成立しているデータを作成
-            extractPacketData(zeroPkt, timestamp, address, data, size);
-            return Status::Timeout;
-        }
-
-        if (!popFromBuffer(pkt))
-        {
-            Packet zeroPkt = makeEmptyPacket();     // 中身が空でCRCが成立しているデータを作成
-            extractPacketData(zeroPkt, timestamp, address, data, size);
-            return Status::BufferEmpty;
-        }
-        pktStatus = extractPacketData(pkt, timestamp, address, data, size);
-        return pktStatus;
+        return getPacket(BufferMode::Pop, nowMillis, timestamp, address, data, size);
     }
 
     /**
@@ -275,17 +342,7 @@ namespace ROBO_WCOM
      */
     Status PeekLatestPacket(uint32_t nowMillis, uint32_t* timestamp, uint8_t* address, uint8_t* data, uint8_t* size)
     {
-        Packet pkt;
-        Status pktStatus;
-        if (nowMillis - lastRecvMillis > timeoutMillis)
-        {
-            Packet zeroPkt = makeEmptyPacket();     // 中身が空でCRCが成立しているデータを作成
-            extractPacketData(zeroPkt, timestamp, address, data, size);
-            return Status::Timeout;
-        }
-        pkt = recvBuffer[tail];
-        pktStatus = extractPacketData(pkt, timestamp, address, data, size);
-        return pktStatus;
+        return getPacket(BufferMode::Peek, nowMillis, timestamp, address, data, size);
     }
 
 
@@ -302,7 +359,7 @@ namespace ROBO_WCOM
     /**
      * @brief バッファのクリア
      * 
-     * @return Status 
+     * @return Status
      */
     Status FlushBuffer(void)
     {

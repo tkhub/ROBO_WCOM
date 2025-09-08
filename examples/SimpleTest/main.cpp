@@ -8,8 +8,8 @@
 //---------------------------------------------
 #define BOARD_A 1  ///< 送信側ボード
 #define BOARD_B 2  ///< 受信側ボード
-// #define BOARD_IS BOARD_A
-#define BOARD_IS BOARD_B
+#define BOARD_IS BOARD_A
+// #define BOARD_IS BOARD_B
 
 //---------------------------------------------
 // 通信相手のMACアドレス設定
@@ -56,6 +56,7 @@ void setup()
 void loop()
 {
     uint32_t nowMillis = millis();
+    uint32_t bTime, aTime;
     int cap;
 
 #if BOARD_IS == BOARD_A
@@ -63,12 +64,17 @@ void loop()
     for (cap = 0; cap < 100; cap++)
     {
         uint32_t randomVal = random(0, 100);
+        bTime = micros();
         testSend(testCounter, nowMillis, randomVal);
+        aTime = micros();
+        Serial.print(" : ");
+        Serial.print(aTime-bTime);
+        Serial.print(" : ");
         Serial.println();
         testCounter++;
-        delay(1);
+        delay(10);
     }
-    delay(2000);
+    // delay(2000);
 
 #else
     // 受信側：バッファにデータがあれば受信処理
@@ -107,8 +113,8 @@ void testReceive(uint32_t nowMillis)
     uint8_t data[ROBO_WCOM::CARRIED_DATA_MAX_SIZE];
 
     // パケット受信
-    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
-//    auto rcv_status = ROBO_WCOM::PeekLatestPacket(nowMillis, &timestamp, address, data, &size);
+//    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
+    auto rcv_status = ROBO_WCOM::PeekLatestPacket(nowMillis, &timestamp, address, data, &size);
 
     // ステータス表示
     switch (rcv_status)
