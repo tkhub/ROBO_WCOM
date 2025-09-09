@@ -77,7 +77,6 @@ void loop()
     // delay(2000);
 
 #else
-    // 受信側：バッファにデータがあれば受信処理
     cap = ROBO_WCOM::ReceivedCapacity();
     Serial.print("t=");
     Serial.print(nowMillis);
@@ -112,8 +111,9 @@ void testReceive(uint32_t nowMillis)
     uint8_t address[6];
     uint8_t data[ROBO_WCOM::CARRIED_DATA_MAX_SIZE];
 
-    // パケット受信
+    // パケット受信(バッファあり)
 //    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
+    // パケット受信(バッファなし)
     auto rcv_status = ROBO_WCOM::PeekLatestPacket(nowMillis, &timestamp, address, data, &size);
 
     // ステータス表示
