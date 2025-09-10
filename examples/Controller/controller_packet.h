@@ -4,9 +4,13 @@
 #include <Arduino.h>
 
 struct __attribute__((packed)) RoboCommand{
-    float velocity_x;           ///<  x軸方向の速度（相対値） -100 ~ +100
-    float velocity_y;           ///<  y軸方向の速度（相対値） -100 ~ +100
-    float omega;                ///<  角速度（相対値） -100 ~ +100
+
+    struct __attribute__((packed))
+    {
+        float x;           ///<  x軸方向の速度（相対値） -100 ~ +100
+        float y;           ///<  y軸方向の速度（相対値） -100 ~ +100
+        float omega;                ///<  角速度（相対値） -100 ~ +100
+    }velocity;
     union
     {
         uint8_t FLAGS;          ///< 武器フラグを一括操作
