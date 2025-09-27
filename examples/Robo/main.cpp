@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "ROBO_WCOM.h"
-#include "robo_packet.h"
-#include "controller_packet.h"
+#include <robo_packet.h>
+#include <controller_packet.h>
 
 #define CH_IRQ_TIMER    1
 #define CONFORG_TIMER_DIV       80
