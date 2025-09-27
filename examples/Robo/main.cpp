@@ -23,7 +23,8 @@ hw_timer_t* hwtimer = NULL;
 //---------------------------------------------
 // 通信相手のMACアドレス設定
 //---------------------------------------------
-uint8_t MACADDRESS_BOARD_CONTROLLER[6] = {  0x08, 0xB6, 0x1F, 0xEE, 0x42, 0xF4};
+//uint8_t MACADDRESS_BOARD_CONTROLLER[6] = {  0x08, 0xB6, 0x1F, 0xEE, 0x42, 0xF4};
+uint8_t MACADDRESS_BOARD_CONTROLLER[6] = {  0x14, 0x2B, 0x2F, 0xA0, 0xC7, 0x2E};
 uint8_t MACADDRESS_BOARD_ROBO[6] = {        0xEC, 0xE3, 0x34, 0xD1, 0x36, 0xBC};
 
 // パワー関係の変数
@@ -41,8 +42,8 @@ uint8_t wp_flg;
 uint16_t sw_flg;
 
 /**送受信するデータ**/
-RoboCommand rcvCommand;
-RoboStatus sendStatus;
+RoboCommand_t rcvCommand;
+RoboStatus_t sendStatus;
 
 void MainTaskCore0(void *pvParameters);
 void MainTaskCore1(void *pvParameters);
@@ -137,8 +138,8 @@ void MainTaskCore0(void *pvParameters)
         auto rcvStatus = ROBO_WCOM::PeekLatestPacket(millis(), &rcvTimeStamp, controllerAddress, reinterpret_cast<uint8_t*>(&rcvCommand), &rcvSize);
         if (rcvStatus == ROBO_WCOM::Status::Ok)
         {
-            motor_power[MOTOR_CH_FL] = rcvCommand.velocity_x - rcvCommand.omega;
-            motor_power[MOTOR_CH_FR] = rcvCommand.velocity_x + rcvCommand.omega;
+            motor_power[MOTOR_CH_FL] = rcvCommand.velocity.x - rcvCommand.velocity.omega;
+            motor_power[MOTOR_CH_FR] = rcvCommand.velocity.x + rcvCommand.velocity.omega;
             motor_power[MOTOR_CH_RL] = motor_power[MOTOR_CH_FL];
             motor_power[MOTOR_CH_RR] = motor_power[MOTOR_CH_FR];
             wp_flg = rcvCommand.WEAPON_FLAGS.FLAGS;

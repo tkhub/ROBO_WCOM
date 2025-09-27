@@ -25,8 +25,8 @@ uint8_t MACADDRESS_BOARD_ROBO[6] = {        0xEC, 0xE3, 0x34, 0xD1, 0x36, 0xBC};
 void statusViewer(void* pvParameters);  // ROBO側のステータスを取得して表示
 TaskHandle_t thp[1];                    // タスクハンドラ
 
-RoboCommand sendCommand;                // 送信するコマンド
-RoboStatus rcvStatus;                   // 受信したステータス
+RoboCommand_t sendCommand;                // 送信するコマンド
+RoboStatus_t rcvStatus;                   // 受信したステータス
 uint32_t rcvTimeStamp;                  // 受信したロボット側の時刻
 uint8_t rcvAddress[6];                  // 受信したロボット側のアドレス
 uint8_t rcvSize;                        // 受信したデータのサイズ
@@ -158,7 +158,7 @@ void loop(void)
     sendCommand.velocity.omega = vw;
     sendCommand.WEAPON_FLAGS.FLAGS = wp;
     nowMillis = millis();
-    ROBO_WCOM::SendPacket(nowMillis, reinterpret_cast<uint8_t*>(&sendCommand), sizeof(RoboCommand));
+    ROBO_WCOM::SendPacket(nowMillis, reinterpret_cast<uint8_t*>(&sendCommand), sizeof(RoboCommand_t));
     
     // デバッグ用に送信した時刻だけ表示する
     snprintf(cmdString, 32, "<< SEND CMD : %ld >>", nowMillis);
