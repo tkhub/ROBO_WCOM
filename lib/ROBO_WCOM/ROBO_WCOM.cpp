@@ -99,7 +99,7 @@ namespace ROBO_WCOM
                             uint8_t* data, uint8_t* size)
     {
         Packet pkt;
-        if (nowMillis - lastRecvMillis > timeoutMillis)
+        if ((int32_t)nowMillis - (int32_t)lastRecvMillis > (int32_t)timeoutMillis)
         {
             return Status::Timeout;
         }
