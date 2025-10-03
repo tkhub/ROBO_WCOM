@@ -1,25 +1,26 @@
 #include <Arduino.h>
-#include "ROBO_WCOM.h"
-
+#include <ROBO_WCOM.h>
+#include "MACADDRESS.h"
 #define TEST_STRING_SIZE 64  ///< 送信メッセージの最大長（バイト）
+
+//---------------------------------------------
+// ボード切り替え
+//---------------------------------------------
+#define BOARD_A         1
+#define BOARD_B         2
+#define THIS_BOARD_IS   BOARD_A
 
 //---------------------------------------------
 // 動作モード切り替え
 //---------------------------------------------
-#define BOARD_A 1  ///< 送信側ボード
-#define BOARD_B 2  ///< 受信側ボード
-#define BOARD_IS BOARD_A
-// #define BOARD_IS BOARD_B
+#define SEND_BOARD      3
+#define RECEIVE_BOARD   4
+#define MY_ROLL_IS      SEND_BOARD
 
-//---------------------------------------------
-// 通信相手のMACアドレス設定
-//---------------------------------------------
-// uint8_t MACADDRESS_BOARD_A[6] = {0x08, 0xB6, 0x1F, 0xEE, 0x42, 0xF4};
-// uint8_t MACADDRESS_BOARD_A[6] = {  0x14, 0x2B, 0x2F, 0xA0, 0xC7, 0x2E};
-// uint8_t MACADDRESS_BOARD_B[6] = {0xEC, 0xE3, 0x34, 0xD1, 0x36, 0xBC};
+#define BUFFERED_RECEIVE        5
+#define NON_BUFFERED_RECEIVE    6
+#define RECIVE_MODE_IS   NON_BUFFERED_RECEIVE
 
-uint8_t MACADDRESS_BOARD_B[6] = {  0x14, 0x2B, 0x2F, 0xA0, 0xC7, 0x2C};
-uint8_t MACADDRESS_BOARD_A[6] = {0xEC, 0xE3, 0x34, 0xD1, 0x36, 0xBC};
 
 int16_t testCounter = 0;  ///< 送信カウンタ
 ROBO_WCOM::PacketData receivedPacket; ///< 受信データ格納用
@@ -46,7 +47,7 @@ void setup()
     Serial.begin(115200);
     Serial.println("Board Boot");
 
-#if BOARD_IS == BOARD_A
+#if THIS_BOARD_IS == BOARD_A
     auto initStatus = ROBO_WCOM::Init(MACADDRESS_BOARD_A, MACADDRESS_BOARD_B, millis(), 1000);
     Serial.print("Controller communication started. : Status=");
     Serial.println(ROBO_WCOM::ToString(initStatus));
@@ -63,7 +64,7 @@ void loop()
     uint32_t bTime, aTime;
     int cap;
 
-#if BOARD_IS == BOARD_A
+#if MY_ROLL_IS == SEND_BOARD
     // 送信側：100回連続送信
     for (cap = 0; cap < 100; cap++)
     {
@@ -115,10 +116,11 @@ void testReceive(uint32_t nowMillis)
     uint8_t address[6];
     uint8_t data[ROBO_WCOM::CARRIED_DATA_MAX_SIZE];
 
-    // パケット受信(バッファあり)
-//    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
-    // パケット受信(バッファなし)
+#if RECIVE_MODE_IS == BUFFERED_RECEIVE
+    auto rcv_status = ROBO_WCOM::PopOldestPacket(nowMillis, &timestamp, address, data, &size);
+#else
     auto rcv_status = ROBO_WCOM::PeekLatestPacket(nowMillis, &timestamp, address, data, &size);
+#endif
 
     // ステータス表示
     switch (rcv_status)
